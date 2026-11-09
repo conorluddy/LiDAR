@@ -5,6 +5,7 @@ import ARKit
 import AVFoundation
 import CoreImage
 import UIKit
+import simd
 
 @MainActor final class CaptureController: NSObject, ObservableObject, ARSessionDelegate {
     @Published var mode = "RGB"
@@ -31,15 +32,103 @@ import UIKit
     @Published var files: [URL] = []
     @Published var frozenCloud: PointCloud?
 
+    @Published var freezing = false
+    @Published var painting = false
+    @Published var scanCloud: PointCloud?
+    @Published var scanFrames = 0
+    @Published var scanMessage = "Start a new scan to accumulate surfaces."
+    @Published var minimumConfidence = 2
+    @Published var maximumDistance = 5.0
+    private(set) var scanViewID = UUID()
+    private var grid = VoxelGrid()
+    private var generation = UUID()
+    private var processing = false
+    private var lastAccumulation = 0.0
+    private var firstCameraTransform: simd_float4x4?
+
     func freeze() {
-        guard running, let frame = session.currentFrame,
+        guard running, !freezing, let frame = session.currentFrame,
               let depth = (smoothed ? frame.smoothedSceneDepth : frame.sceneDepth) else {
             status = "Start capture and wait for depth before freezing."
             return
         }
-        frozenCloud = PointCloud.capture(frame: frame, depth: depth, context: context)
         stop()
-        status = "Frozen observation ready. Restart capture for another view."
+        freezing = true
+        let token = generation
+        Task {
+            let cloud = await PointCloud.capture(frame: frame, depth: depth, context: context)
+            guard generation == token else { return }
+            freezing = false
+            frozenCloud = cloud
+            status = "Frozen observation ready. Restart capture for another view."
+        }
+    }
+
+    func clearScan() {
+        generation = UUID()
+        grid = VoxelGrid()
+        scanCloud = nil
+        scanFrames = 0
+        firstCameraTransform = nil
+        scanViewID = UUID()
+        scanMessage = "Scan cleared."
+    }
+
+    func newScan() {
+        stop()
+        clearScan()
+        start(paint: true)
+    }
+
+    func togglePainting() {
+        guard running, !grid.isFull else { return }
+        painting.toggle()
+        // Discard an in-flight observation on pause, retaining the current coordinate system.
+        generation = UUID()
+        scanMessage = painting ? "Painting surfaces…" : "Accumulation paused; tracking remains active."
+    }
+
+    func inspectScan() {
+        guard let cloud = scanCloud else { return }
+        stop()
+        frozenCloud = cloud
+    }
+
+    private func accumulate(_ frame: ARFrame) {
+        guard painting, !processing, frame.timestamp - lastAccumulation >= 1.0 / 3 else { return }
+        guard case .normal = frame.camera.trackingState else {
+            scanMessage = "Accumulation paused: wait for normal tracking."
+            return
+        }
+        guard ProcessInfo.processInfo.thermalState != .serious,
+              ProcessInfo.processInfo.thermalState != .critical else {
+            painting = false
+            scanMessage = "Accumulation paused to cool the device. Resume when it has cooled."
+            return
+        }
+        guard let depth = (smoothed ? frame.smoothedSceneDepth : frame.sceneDepth) else { return }
+        lastAccumulation = frame.timestamp
+        processing = true
+        let token = generation
+        let inputGrid = grid
+        let confidence = UInt8(minimumConfidence)
+        let distance = Float(maximumDistance)
+        let transform = frame.camera.transform
+        Task {
+            let output = await PointCloud.accumulate(frame: frame, depth: depth, context: context, grid: inputGrid, minimumConfidence: confidence, maximumDistance: distance)
+            processing = false
+            guard generation == token else { return }
+            grid = output
+            if firstCameraTransform == nil { firstCameraTransform = transform }
+            scanFrames += 1
+            scanCloud = PointCloud(points: output.points, cameraTransform: firstCameraTransform ?? transform, isDemo: false)
+            if output.isFull {
+                painting = false
+                scanMessage = "80,000-point budget reached. Inspect this scan or start a new one."
+            } else {
+                scanMessage = "\(output.points.count.formatted()) occupied cells · \(scanFrames) observations · 2 cm cells"
+            }
+        }
     }
 
     private let session = ARSession()
@@ -48,13 +137,14 @@ import UIKit
     private var lastStats = 0.0
     private var cameraCount = 0
     private var depthCount = 0
-    func start() {
-        guard !running, !startRequested else { return }
+    func start(paint: Bool = false) {
+        guard !running, !startRequested, !freezing else { return }
         guard ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) else { status = "Scene depth requires a LiDAR-equipped iPhone or iPad. Simulator capture is unavailable."; return }
         startRequested = true
+        let requestGeneration = generation
         AVCaptureDevice.requestAccess(for: .video) { allowed in
             Task { @MainActor in
-                guard self.startRequested else { return }
+                guard self.startRequested, self.generation == requestGeneration else { return }
                 self.startRequested = false
                 guard allowed else { self.denied = true; self.status = "Camera access is required."; return }
                 self.denied = false
@@ -71,12 +161,23 @@ import UIKit
                 self.lastStats = 0; self.cameraCount = 0; self.depthCount = 0
                 self.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
                 self.running = true
+                self.painting = paint
+                self.lastAccumulation = 0
             }
         }
     }
-    func stop() { startRequested = false; session.pause(); running = false; status = "Stopped. Tap Start to restart." }
+    func stop() {
+        startRequested = false
+        session.pause()
+        running = false
+        painting = false
+        freezing = false
+        generation = UUID()
+        status = "Stopped. Tap Start to restart."
+    }
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         guard running else { return }
+        accumulate(frame)
         cameraCount += 1
         if frame.sceneDepth != nil { depthCount += 1 }
         if lastStats == 0 { lastStats = frame.timestamp }

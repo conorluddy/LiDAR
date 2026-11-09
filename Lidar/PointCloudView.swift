@@ -5,13 +5,14 @@ import simd
 
 struct PointCloudView: View {
     let cloud: PointCloud
+    var title = "Freeze reality"
     @State private var colouring = "RGB"
     @State private var highConfidenceOnly = false
     @State private var reset = UUID()
 
     var body: some View {
         VStack(spacing: 12) {
-            Text(cloud.isDemo ? "Synthetic demo · no sensor data" : "Frozen depth observation").font(.headline)
+            Text(cloud.isDemo ? "Synthetic demo · no sensor data" : title == "Accumulated scan" ? "Accumulated depth observations" : "Frozen depth observation").font(.headline)
             Picker("Point colour", selection: $colouring) {
                 ForEach(["RGB", "Depth", "Confidence"], id: \.self) { Text($0) }
             }.pickerStyle(.segmented)
@@ -23,7 +24,7 @@ struct PointCloudView: View {
             Text("The orange marker is the capture camera. Gaps reveal surfaces this observation could not see.")
                 .font(.caption).foregroundStyle(.secondary)
             Button("Reset View") { reset = UUID() }.buttonStyle(.bordered)
-        }.padding().navigationTitle("Freeze reality").navigationBarTitleDisplayMode(.inline)
+        }.padding().navigationTitle(title).navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -34,6 +35,7 @@ struct CloudSceneView: UIViewRepresentable {
     let colouring: String
     let highConfidenceOnly: Bool
     let reset: UUID
+    var cameraIdentity: UUID? = nil
     var selected: [SpatialPoint] = []
     var onSelect: ((SpatialPoint) -> Void)? = nil
 
@@ -52,7 +54,7 @@ struct CloudSceneView: UIViewRepresentable {
 
     func updateUIView(_ view: SCNView, context: Context) {
         context.coordinator.onSelect = onSelect
-        context.coordinator.points = cloud.points.filter { !highConfidenceOnly || $0.confidence == 2 }
+        if onSelect != nil { context.coordinator.points = cloud.points.filter { !highConfidenceOnly || $0.confidence == 2 } }
         updateMeasurements(in: view)
         let key = "\(cloud.id)-\(colouring)-\(highConfidenceOnly)"
         if context.coordinator.key != key {
@@ -86,8 +88,8 @@ struct CloudSceneView: UIViewRepresentable {
             node.name = "points"
             view.scene?.rootNode.addChildNode(node)
         }
-        if context.coordinator.cloudID != cloud.id || context.coordinator.reset != reset {
-            context.coordinator.cloudID = cloud.id
+        if context.coordinator.cloudID != (cameraIdentity ?? cloud.id) || context.coordinator.reset != reset {
+            context.coordinator.cloudID = cameraIdentity ?? cloud.id
             context.coordinator.reset = reset
             view.scene?.rootNode.childNode(withName: "captureCamera", recursively: false)?.removeFromParentNode()
             let marker = SCNNode(geometry: SCNPyramid(width: 0.12, height: 0.16, length: 0.12))

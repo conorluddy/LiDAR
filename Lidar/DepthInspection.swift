@@ -2,7 +2,7 @@
 import ARKit
 import UIKit
 
-struct DepthInspection {
+nonisolated struct DepthInspection: Sendable {
     let width: Int
     let height: Int
     let depths: [Float]

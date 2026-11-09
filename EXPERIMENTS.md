@@ -35,3 +35,23 @@ Plane tilt is a three-point estimate relative to gravity, not a fitted surface n
 Geometry validation: `swiftc Lidar/SpatialMeasurement.swift Validation/SpatialMeasurementChecks.swift -o /tmp/lidar-measurement-checks && /tmp/lidar-measurement-checks`.
 
 Hardware checks: known-size box, repeated endpoint selection, tilted board against a level, foreground/background selection, orbit and clear/reset. Synthetic Demo verifies picking and annotations without validating sensor measurements.
+
+## 5. Paint the room
+
+Choose Paint the room and Start New Scan. Walk slowly around a static scene. A world-space point cloud builds at up to three observations per second; drag to orbit and pinch to zoom while it grows. Pause/Resume Painting leaves tracking running so observations retain the same coordinate system. Inspect Scan stops capture and opens the larger viewer. Clear Scan discards retained points; if painting is active it begins filling again. Start New Scan resets tracking and all accumulated geometry.
+
+Accumulation samples every fourth depth pixel, filters new observations by selected confidence and range, and retains one observed point per 2 cm cell (preferring higher confidence). The cap is 80,000 occupied cells. These are resource controls, not an accuracy guarantee. This is pose-based accumulation without loop closure, moving-object removal, TSDF fusion or reconstructed mesh output. Data is currently in memory only. Thermal pressure pauses painting; backgrounding stops capture. CPU point conversion and accumulation run off the main actor, with one accumulation observation in flight. Generation checks discard results invalidated by pause/clear/restart.
+
+Synthetic Accumulation Demo merges two offset artificial observations through the same voxel grid. It validates accumulation display without making claims about live registration.
+
+Geometry validation: `swiftc Lidar/SpatialPoint.swift Lidar/SpatialProjection.swift Lidar/VoxelGrid.swift Validation/SpatialCaptureChecks.swift -o /tmp/lidar-capture-checks && /tmp/lidar-capture-checks`.
+
+Hardware checks: walk around a box and room corner; compare coverage from successive viewpoints; pause/move/resume; clear/restart while processing; tracking loss; confidence/range filtering; point-budget limit; background and thermal behavior. Inspect drift and RGB alignment against a static reference.
+
+## Validation performed (2026-11-09)
+
+- Each experiment compiled successfully for generic iOS Simulator (arm64 and x86_64).
+- Final suite compiled for generic physical iOS with signing disabled.
+- iPhone 18 Pro / iOS 27 simulator: inspected Surface detective layout and unsupported-depth message; exercised synthetic cloud colouring/filter/orbit/reset; dropped a ball onto the synthetic floor; selected two synthetic points and verified numbered markers, connecting line and a distance result; displayed two merged synthetic observations (12,850 retained points).
+- Standalone Swift geometry checks passed for distance, plane tilt, degenerate selections, scaled intrinsics, axis conventions, world transforms, voxel deduplication, confidence replacement, negative coordinates and capacity limits.
+- Live sensor quality, RGB/depth alignment, registration drift, real room collisions and sustained performance remain physical-device checks. Synthetic demos do not validate these.

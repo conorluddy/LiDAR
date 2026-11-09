@@ -29,6 +29,9 @@ struct RoomPlaygroundView: View {
                 Button("Clear Balls") { room.clearBalls() }
                 Button("Synthetic Physics Demo") { room.startDemo() }
             }.buttonStyle(.bordered)
+            if room.denied {
+                Button("Open Settings") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
+            }
             Text("Move slowly to build coverage. Mesh geometry updates during capture, so collisions may shift or have gaps. Up to 20 balls are retained.")
                 .font(.caption).foregroundStyle(.secondary)
         }
@@ -50,7 +53,9 @@ final class RoomPlaygroundController: NSObject, ObservableObject, ARSessionDeleg
     @Published var running = false
     @Published var demo = false
     @Published var showMesh = true
+    @Published var denied = false
     private var requested = false
+    private var requestGeneration = UUID()
     private var balls: [AnchorEntity] = []
     private var meshIDs: Set<UUID> = []
     private var lastStats = 0.0
@@ -62,11 +67,13 @@ final class RoomPlaygroundController: NSObject, ObservableObject, ARSessionDeleg
             return
         }
         requested = true
+        let token = requestGeneration
         AVCaptureDevice.requestAccess(for: .video) { allowed in
             Task { @MainActor in
-                guard self.requested else { return }
+                guard self.requested, self.requestGeneration == token else { return }
                 self.requested = false
-                guard allowed else { self.status = "Camera access is required. Enable it in Settings."; return }
+                guard allowed else { self.denied = true; self.status = "Camera access is required. Enable it in Settings."; return }
+                self.denied = false
                 self.resetScene()
                 self.demo = false
                 self.view.cameraMode = .ar
@@ -86,6 +93,7 @@ final class RoomPlaygroundController: NSObject, ObservableObject, ARSessionDeleg
 
     func stop() {
         requested = false
+        requestGeneration = UUID()
         view.session.pause()
         for anchor in balls {
             for case let ball as ModelEntity in anchor.children { ball.physicsBody?.mode = .static }
@@ -108,6 +116,7 @@ final class RoomPlaygroundController: NSObject, ObservableObject, ARSessionDeleg
 
     func startDemo() {
         requested = false
+        requestGeneration = UUID()
         resetScene()
         demo = true
         running = true
@@ -144,7 +153,7 @@ final class RoomPlaygroundController: NSObject, ObservableObject, ARSessionDeleg
                 status = "Aim the crosshair at a scanned surface within 5 m."
                 return
             }
-            position = hit.position + SIMD3(0, 0.25, 0)
+            position = hit.position + hit.normal * 0.1 + SIMD3(0, 0.25, 0)
         }
         if balls.count >= 20 { view.scene.removeAnchor(balls.removeFirst()) }
         let ball = ModelEntity(mesh: .generateSphere(radius: 0.06), materials: [SimpleMaterial(color: .systemOrange, isMetallic: true)])
@@ -160,6 +169,7 @@ final class RoomPlaygroundController: NSObject, ObservableObject, ARSessionDeleg
     func clearBalls() {
         balls.forEach { view.scene.removeAnchor($0) }
         balls.removeAll()
+        status = demo ? "Synthetic floor ready. Drop a ball to test gravity and collisions." : "Balls cleared. Aim at a scanned surface to drop another."
     }
 
     func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
