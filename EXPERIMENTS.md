@@ -17,3 +17,11 @@ Choose Freeze reality, Start, and Freeze Frame. Capture pauses while inspecting 
 Explore Synthetic Demo works without LiDAR and is explicitly labelled synthetic. This checks the renderer and controls, not sensor accuracy. SceneKit is used as a replaceable prototype renderer; it is deprecated by Apple but remains available in the target SDK.
 
 Hardware checks: compare RGB alignment at object edges, inspect a known-size box, rotate around holes, verify confidence filtering and repeat freeze/restart/background.
+
+## 3. Room playground
+
+Choose Room playground and Start Room Scan. Sweep the camera over the floor and nearby furniture; the mesh overlay shows reconstructed coverage. Aim the crosshair at a scanned surface within 5 m, then Drop Ball. Balls use RealityKit gravity and collision against ARKit's reconstructed surroundings. Clear Balls removes them; the oldest ball is removed after 20. Stop/background pauses capture and physics; restarting resets the room.
+
+Synthetic Physics Demo creates a labelled, artificial floor and camera without AR capture. It verifies rendering and ball physics on the simulator. It does not validate live mesh collisions.
+
+Hardware checks: floor/table collisions, gaps and changing meshes, mesh toggle, tracking loss, interruption, start/stop/background, and switching experiments without competing camera sessions.

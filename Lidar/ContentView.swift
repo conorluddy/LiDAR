@@ -14,9 +14,13 @@ struct ContentView: View {
                     Picker("Experiment", selection: $experiment) {
                         Text("Surface detective").tag("Surface detective")
                         Text("Freeze reality").tag("Freeze reality")
+                        Text("Room playground").tag("Room playground")
                     }
                     .pickerStyle(.menu)
                     Text(experiment).font(.title2.bold())
+                    if experiment == "Room playground" {
+                        RoomPlaygroundView()
+                    } else {
                     if experiment == "Freeze reality" {
                         Text("Freeze one depth observation, then explore it in 3D.").font(.subheadline)
                         Button("Freeze Frame") { capture.freeze() }.disabled(!capture.running).buttonStyle(.borderedProminent)
@@ -48,6 +52,7 @@ struct ContentView: View {
                     if capture.denied {
                         Button("Open Settings") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
                     }
+                    }
                 }.padding()
             }
             .navigationTitle("LiDAR Lab")
@@ -57,6 +62,7 @@ struct ContentView: View {
                         .toolbar { Button("Done") { capture.frozenCloud = nil } }
                 }
             }
+            .onChange(of: experiment) { _, _ in capture.stop() }
             .onChange(of: phase) { _, value in if value != .active { capture.stop() } }
             .onChange(of: capture.smoothed) { _, _ in capture.resetInspection() }
         }
