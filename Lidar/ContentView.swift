@@ -4,13 +4,24 @@ import UIKit
 
 struct ContentView: View {
     @StateObject private var capture = CaptureController()
+    @State private var experiment = "Surface detective"
     @Environment(\.scenePhase) private var phase
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    Text("Surface detective").font(.title2.bold())
+                    Picker("Experiment", selection: $experiment) {
+                        Text("Surface detective").tag("Surface detective")
+                        Text("Freeze reality").tag("Freeze reality")
+                    }
+                    .pickerStyle(.menu)
+                    Text(experiment).font(.title2.bold())
+                    if experiment == "Freeze reality" {
+                        Text("Freeze one depth observation, then explore it in 3D.").font(.subheadline)
+                        Button("Freeze Frame") { capture.freeze() }.disabled(!capture.running).buttonStyle(.borderedProminent)
+                        NavigationLink("Explore Synthetic Demo") { PointCloudView(cloud: .demo) }
+                    }
                     Text("Explore distance and confidence. Tap the preview to inspect a surface patch.")
                         .font(.subheadline).foregroundStyle(.secondary)
                     Picker("View", selection: $capture.mode) {
@@ -40,6 +51,12 @@ struct ContentView: View {
                 }.padding()
             }
             .navigationTitle("LiDAR Lab")
+            .sheet(item: $capture.frozenCloud) { cloud in
+                NavigationStack {
+                    PointCloudView(cloud: cloud)
+                        .toolbar { Button("Done") { capture.frozenCloud = nil } }
+                }
+            }
             .onChange(of: phase) { _, value in if value != .active { capture.stop() } }
             .onChange(of: capture.smoothed) { _, _ in capture.resetInspection() }
         }

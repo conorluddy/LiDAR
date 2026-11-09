@@ -29,6 +29,19 @@ import UIKit
     @Published var denied = false
     @Published var saving = false
     @Published var files: [URL] = []
+    @Published var frozenCloud: PointCloud?
+
+    func freeze() {
+        guard running, let frame = session.currentFrame,
+              let depth = (smoothed ? frame.smoothedSceneDepth : frame.sceneDepth) else {
+            status = "Start capture and wait for depth before freezing."
+            return
+        }
+        frozenCloud = PointCloud.capture(frame: frame, depth: depth, context: context)
+        stop()
+        status = "Frozen observation ready. Restart capture for another view."
+    }
+
     private let session = ARSession()
     private let context = CIContext()
     private var lastPreview = 0.0
