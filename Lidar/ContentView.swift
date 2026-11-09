@@ -15,16 +15,23 @@ struct ContentView: View {
                         Text("Surface detective").tag("Surface detective")
                         Text("Freeze reality").tag("Freeze reality")
                         Text("Room playground").tag("Room playground")
+                        Text("Digital tape measure").tag("Digital tape measure")
                     }
                     .pickerStyle(.menu)
                     Text(experiment).font(.title2.bold())
                     if experiment == "Room playground" {
                         RoomPlaygroundView()
                     } else {
-                    if experiment == "Freeze reality" {
+                    if experiment == "Freeze reality" || experiment == "Digital tape measure" {
                         Text("Freeze one depth observation, then explore it in 3D.").font(.subheadline)
                         Button("Freeze Frame") { capture.freeze() }.disabled(!capture.running).buttonStyle(.borderedProminent)
-                        NavigationLink("Explore Synthetic Demo") { PointCloudView(cloud: .demo) }
+                        NavigationLink("Explore Synthetic Demo") {
+                            if experiment == "Digital tape measure" {
+                                TapeMeasureView(cloud: .demo).onAppear { capture.stop() }
+                            } else {
+                                PointCloudView(cloud: .demo).onAppear { capture.stop() }
+                            }
+                        }
                     }
                     Text("Explore distance and confidence. Tap the preview to inspect a surface patch.")
                         .font(.subheadline).foregroundStyle(.secondary)
@@ -58,8 +65,11 @@ struct ContentView: View {
             .navigationTitle("LiDAR Lab")
             .sheet(item: $capture.frozenCloud) { cloud in
                 NavigationStack {
-                    PointCloudView(cloud: cloud)
-                        .toolbar { Button("Done") { capture.frozenCloud = nil } }
+                    Group {
+                        if experiment == "Digital tape measure" { TapeMeasureView(cloud: cloud) }
+                        else { PointCloudView(cloud: cloud) }
+                    }
+                    .toolbar { Button("Done") { capture.frozenCloud = nil } }
                 }
             }
             .onChange(of: experiment) { _, _ in capture.stop() }

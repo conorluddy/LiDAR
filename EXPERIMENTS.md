@@ -25,3 +25,13 @@ Choose Room playground and Start Room Scan. Sweep the camera over the floor and 
 Synthetic Physics Demo creates a labelled, artificial floor and camera without AR capture. It verifies rendering and ball physics on the simulator. It does not validate live mesh collisions.
 
 Hardware checks: floor/table collisions, gaps and changing meshes, mesh toggle, tracking loss, interruption, start/stop/background, and switching experiments without competing camera sessions.
+
+## 4. Digital tape measure
+
+Choose Digital tape measure, Start and Freeze Frame. In the frozen cloud, select Distance (two taps) or Plane tilt (three taps). Numbered yellow markers and lines show the selected observations. A further selection starts a new measurement; Clear Points resets it. Orbit/zoom before selecting if surfaces overlap. Picking uses an 18-point screen tolerance and prefers the frontmost nearby observation; inspect marker placement carefully.
+
+Plane tilt is a three-point estimate relative to gravity, not a fitted surface normal. It rejects baselines under 5 cm and nearly collinear selections. Confidence warnings identify selected depth below the high category. Compare measurements with a physical ruler or level; do not infer accuracy from displayed decimal places.
+
+Geometry validation: `swiftc Lidar/SpatialMeasurement.swift Validation/SpatialMeasurementChecks.swift -o /tmp/lidar-measurement-checks && /tmp/lidar-measurement-checks`.
+
+Hardware checks: known-size box, repeated endpoint selection, tilted board against a level, foreground/background selection, orbit and clear/reset. Synthetic Demo verifies picking and annotations without validating sensor measurements.

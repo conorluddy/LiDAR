@@ -34,6 +34,8 @@ struct CloudSceneView: UIViewRepresentable {
     let colouring: String
     let highConfidenceOnly: Bool
     let reset: UUID
+    var selected: [SpatialPoint] = []
+    var onSelect: ((SpatialPoint) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -44,10 +46,14 @@ struct CloudSceneView: UIViewRepresentable {
         view.allowsCameraControl = true
         view.autoenablesDefaultLighting = true
         view.defaultCameraController.inertiaEnabled = false
+        view.addGestureRecognizer(UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.selectPoint(_:))))
         return view
     }
 
     func updateUIView(_ view: SCNView, context: Context) {
+        context.coordinator.onSelect = onSelect
+        context.coordinator.points = cloud.points.filter { !highConfidenceOnly || $0.confidence == 2 }
+        updateMeasurements(in: view)
         let key = "\(cloud.id)-\(colouring)-\(highConfidenceOnly)"
         if context.coordinator.key != key {
             context.coordinator.key = key
@@ -105,7 +111,65 @@ struct CloudSceneView: UIViewRepresentable {
         }
     }
 
-    final class Coordinator {
+    private func updateMeasurements(in view: SCNView) {
+        view.scene?.rootNode.childNode(withName: "measurements", recursively: false)?.removeFromParentNode()
+        guard !selected.isEmpty else { return }
+        let root = SCNNode()
+        root.name = "measurements"
+        for (index, point) in selected.enumerated() {
+            let marker = SCNNode(geometry: SCNSphere(radius: 0.018))
+            marker.geometry?.firstMaterial?.diffuse.contents = UIColor.systemYellow
+            marker.geometry?.firstMaterial?.lightingModel = .constant
+            marker.simdPosition = point.position
+            root.addChildNode(marker)
+            let text = SCNText(string: "\(index + 1)", extrusionDepth: 0)
+            text.font = .systemFont(ofSize: 1)
+            text.firstMaterial?.diffuse.contents = UIColor.white
+            let label = SCNNode(geometry: text)
+            label.scale = SCNVector3(0.035, 0.035, 0.035)
+            label.simdPosition = point.position + SIMD3(0.025, 0.025, 0)
+            label.constraints = [SCNBillboardConstraint()]
+            root.addChildNode(label)
+        }
+        if selected.count >= 2 {
+            for index in 1..<selected.count {
+                let a = selected[index - 1].position
+                let b = selected[index].position
+                let delta = b - a
+                let length = simd_length(delta)
+                guard length > 0.0001 else { continue }
+                let line = SCNNode(geometry: SCNCylinder(radius: 0.005, height: CGFloat(length)))
+                line.geometry?.firstMaterial?.diffuse.contents = UIColor.systemYellow
+                line.geometry?.firstMaterial?.lightingModel = .constant
+                line.simdPosition = (a + b) / 2
+                line.simdOrientation = simd_quatf(from: SIMD3(0, 1, 0), to: delta / length)
+                root.addChildNode(line)
+            }
+        }
+        view.scene?.rootNode.addChildNode(root)
+    }
+
+    final class Coordinator: NSObject {
+        var points: [SpatialPoint] = []
+        var onSelect: ((SpatialPoint) -> Void)?
+
+        @objc func selectPoint(_ gesture: UITapGestureRecognizer) {
+            guard let view = gesture.view as? SCNView, let onSelect else { return }
+            let tap = gesture.location(in: view)
+            var candidates: [(point: SpatialPoint, distance: Float, depth: Float)] = []
+            for point in points {
+                let screen = view.projectPoint(SCNVector3(point.position.x, point.position.y, point.position.z))
+                guard screen.z > 0, screen.z < 1 else { continue }
+                let distance = hypot(screen.x - Float(tap.x), screen.y - Float(tap.y))
+                if distance <= 18 { candidates.append((point, distance, screen.z)) }
+            }
+            guard let nearestDistance = candidates.map(\.distance).min() else { return }
+            // Prefer the frontmost observation among points with similar screen proximity.
+            if let hit = candidates.filter({ $0.distance <= nearestDistance + 3 }).min(by: { $0.depth < $1.depth }) {
+                onSelect(hit.point)
+            }
+        }
+
         var key = ""
         var cloudID: UUID?
         var reset: UUID?
